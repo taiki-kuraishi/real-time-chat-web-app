@@ -8,22 +8,26 @@ interface userState {
   userName: string;
   isJoined: boolean;
   text: string;
+  messageList: string[];
   serverMessage: string;
 }
 
 type CounterAction =
   | { type: "reset" }
   | { type: "setIsJoined"; value: userState["isJoined"] }
-  | { type: "updateRoom", value: socketInterface }
+  | { type: "updateRoom", value: socketInterface, value2: userState["isJoined"] }
   | { type: "serverMessage", value: userState["serverMessage"] }
   | { type: "setUserName", value: userState["userName"] }
   | { type: "setRoomId", value: socketInterface["roomId"] }
+  | { type: "setText", value: userState["text"] }
+  | { type: "setMessageList", value: userState["messageList"] }
 
 const initialState: userState & socketInterface = {
   // userState
   userName: "",
   isJoined: false,
   text: "",
+  messageList: [],
   serverMessage: "",
 
   // socketInterface
@@ -38,13 +42,20 @@ function stateReducer(state: userState & socketInterface, action: CounterAction)
     case "setIsJoined":
       return { ...state, isJoined: action.value };
     case "updateRoom":
-      return { ...state, roomId: action.value.roomId, userList: action.value.userList };
+      if (action.value.roomId) {
+        return { ...state, roomId: action.value.roomId, userList: action.value.userList, isJoined: true };
+      }
+      return { ...state, roomId: action.value.roomId, userList: action.value.userList, isJoined: false };
     case "serverMessage":
       return { ...state, serverMessage: action.value };
     case "setUserName":
       return { ...state, userName: action.value };
     case "setRoomId":
       return { ...state, roomId: action.value };
+    case "setText":
+      return { ...state, text: action.value };
+    case "setMessageList":
+      return { ...state, messageList: action.value };
     default:
       throw new Error("Unknown action");
   }
@@ -63,15 +74,23 @@ function App() {
   const reset = () => dispatch({ type: "reset" });
   const serverMessage = (message: string) => dispatch({ type: "serverMessage", value: message });
 
-
+  // roomの作成
   const createRoom = (userName: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
     userName.preventDefault();
     socket.emit("create", state.userName);
   }
 
+  // roomに参加
   const enterRoom = (userName: React.MouseEvent<HTMLButtonElement, MouseEvent>, roomId: any) => {
     userName.preventDefault();
     socket.emit("enter", state.userName, roomId);
+  }
+
+  //messageの送信
+  const postMessage = (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
+    e.preventDefault();
+    socket.emit("post", state.text);
+    dispatch({ type: "setText", value: "" });
   }
 
   socket.on("severMessage", (message) => {
@@ -79,12 +98,21 @@ function App() {
     serverMessage(message);
   });
 
-  socket.on("updateRoom", async (room) => {
+  socket.on("updateRoom", (room) => {
     console.log(room);
-    await dispatch({ type: "updateRoom", value: room });
+    //severMessageの初期化
+    // dispatch({ type: "serverMessage", value: "" });
+
+    dispatch({ type: "updateRoom", value: room, value2: state.isJoined });
     console.log(state);
     console.log(state.roomId);
-    dispatch({ type: "setIsJoined", value: true });
+    // if (state.roomId) {
+    //   dispatch({ type: "setIsJoined", value: true });
+    // }
+  });
+
+  socket.on("basicEmit", (userName,message) => {
+    dispatch({ type: "setMessageList", value: [...state.messageList, `${userName} : ${message}`] });
   });
 
   console.log(state);
@@ -125,7 +153,7 @@ function App() {
               />
               <input type="text" placeholder='roomId'
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({
-                  type: 'setRoomId', value: Number(e.target.value)
+                  type: 'setRoomId', value: e.target.value
                 })}
               />
               <button type='submit'
@@ -141,7 +169,25 @@ function App() {
           <p>your name : {state.userName}</p>
           <p>{JSON.stringify(state.userList)}</p>
           <form>
+            <input type="text"
+              placeholder='message'
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({
+                type: 'setText', value: e.target.value
+              })}
+              value={state.text}
+            />
+            <button type='submit'
+              onClick={(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => postMessage(e)}
+            >send message</button>
           </form>
+          {/* messageListの表示 */}
+          <div>
+            {state.messageList.map((message, index) => {
+              return (
+                <p key={index}>{message}</p>
+              )
+            })}
+            </div>
         </div>
       )}
     </div>
